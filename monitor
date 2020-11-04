@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# https://askubuntu.com/questions/30147/command-to-determine-whether-a-fullscreen-application-is-running
+# https://askubuntu.com/questions/551109/how-to-black-out-screen-when-watching-video-playing-game-on-other-screen
+# https://askubuntu.com/questions/584688/how-can-i-get-the-monitor-resolution-using-the-command-line
+
+which="$(which which)" || exit
+xrandr="$($which xrandr)" || exit
+xdotool="$($which xdotool)" || exit
+xwininfo="$($which xwininfo)" || exit
+xdpyinfo="$($which xdpyinfo)" || exit
+grep="$($which grep)" || exit
+sed="$($which sed)" || exit
+egrep="$($which egrep)" || exit
+awk="$($which awk)" || exit
+cut="$($which cut)" || exit
+
+#DEBUG=1
+
+MONITOR=( $($xrandr | $grep "\ connected\ " | $cut -d " " -f 1) )
+
+if [ "$#" -eq 1 -a "$1" == "on" ]; then
+  for monitor in ${MONITOR[@]} ; do
+    $xrandr --output "${monitor}" --brightness 1
+  done
+  exit
+fi
+
+while read brightness
+do
+  if [ "$brightness" != "1.0" ]; then
+    for monitor in ${MONITOR[@]} ; do
+      $xrandr --output "${monitor}" --brightness 1
+    done
+    exit
+  fi
+done < <($xrandr --verbose | $awk '/Brightness/ { print $2; }')
+
+RESOLUTIONS=( $($xrandr | $sed -ne "s/.*\ connected\ \(primary \)\?\([[:digit:]]\+x[[:digit:]]\+\)+[[:digit:]]\++[[:digit:]]\+\ .*/\2/p") )
+OFFSETS=( $($xrandr | $sed -ne "s/.*\ connected\ \(primary \)\?[[:digit:]]\+x[[:digit:]]\+\(+[[:digit:]]\++[[:digit:]]\+\)\ .*/\2/p") )
+
+WINDOW_SIZE="$(echo $($xwininfo -id $($xdotool getactivewindow) -stats | \
+                $egrep '(Width|Height):' | \
+                $awk '{print $NF}') | \
+                $sed -e 's/ /x/')"
+
+WINDOW_POSITION="$(echo $($xwininfo -id $($xdotool getactivewindow) -stats | \
+                $egrep '(Absolute upper-left X|Absolute upper-left Y):' | \
+                $awk '{print $NF}') | \
+                $sed -e 's/\([[:digit:]]\+\) \([[:digit:]]\)\+/+\1+\2/')"
+
+if [ "$DEBUG" ]; then
+  echo $WINDOW_SIZE
+  echo $WINDOW_POSITION
+  echo ${RESOLUTIONS[@]}
+  echo ${OFFSETS[@]}
+fi
+
+for monitor in "${!MONITOR[@]}"; do
+  if [ "$WINDOW_SIZE" == "${RESOLUTIONS[${monitor}]}" -a "$WINDOW_POSITION" == "${OFFSETS[${monitor}]}" ]; then
+    for monitor_off in "${!MONITOR[@]}"; do
+      if [ "$monitor" != "$monitor_off" ]; then
+        $xrandr --output "${MONITOR[${monitor_off}]}" --brightness 0 
+      fi
+    done
+  fi
+done
