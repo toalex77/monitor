@@ -5,6 +5,7 @@
 # https://askubuntu.com/questions/584688/how-can-i-get-the-monitor-resolution-using-the-command-line
 
 which="$(which which)" || exit
+basename="$($which basename)" || exit
 xrandr="$($which xrandr)" || exit
 xdotool="$($which xdotool)" || exit
 xwininfo="$($which xwininfo)" || exit
@@ -14,8 +15,66 @@ sed="$($which sed)" || exit
 egrep="$($which egrep)" || exit
 awk="$($which awk)" || exit
 cut="$($which cut)" || exit
+getopt="$($which getopt)" || exit
+bc="$($which bc)" || exit
 
-#DEBUG=1
+SELF="$( $basename "$0" )"
+PARSED=$( $getopt --quiet --options=b:dh --longoptions=brightness:,debug,help --name="$SELF" -- "$@" )
+
+eval set -- "$PARSED"
+
+DEBUG=0
+BRIGHTNESS=1
+HELP=0
+
+while true; do
+  case "$1" in
+    -d|--debug)
+      DEBUG=1
+      ;;
+    -b|--brightness)
+      if [ "$DEBUG" -eq 1 ]; then
+        echo "$2"
+        echo "$2 >= 0.0" | $bc 2> /dev/null
+        echo "$2 <= 1.0" | $bc 2> /dev/null
+      fi
+      if [ "$(echo "$2 >= 0.0" | $bc 2> /dev/null)" == "1" -a "$(echo "$2 <= 1.0" | $bc 2>/dev/null)" == "1" ]; then
+        BRIGHTNESS="$2"
+      else
+        echo "Brightness value must be a floting point value from 0 to 1 range."
+        exit
+      fi
+      shift
+      ;;
+    -h|--help)
+      HELP=1
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      HELP=1
+      ;;
+  esac
+  shift
+done
+
+if [ "${HELP}" -eq 1 ]; then
+  echo "A simple script to dim any other monitor except the one with the full screen current application, in a multi-monitor setup."
+  echo
+  echo "Usage: ${SELF} [-b|--brightness brightness] [-h|--help] [-d|--debug]"
+  echo
+  echo " -b, --brightness"
+  echo "        Set the brightness level for the monitors that should go dimmed. Accepted values are floating point from 0 to 1."
+  echo
+  echo " -d, --debug"
+  echo "        Turn on debug messages."
+  echo
+  echo " -h, --help"
+  echo "        Show this help."
+  exit
+fi
 
 MONITOR=( $($xrandr | $grep "\ connected\ " | $cut -d " " -f 1) )
 
@@ -49,7 +108,7 @@ WINDOW_POSITION="$(echo $($xwininfo -id $($xdotool getactivewindow) -stats | \
                 $awk '{print $NF}') | \
                 $sed -e 's/\([[:digit:]]\+\) \([[:digit:]]\)\+/+\1+\2/')"
 
-if [ "$DEBUG" ]; then
+if [ "$DEBUG" -eq 1 ]; then
   echo $WINDOW_SIZE
   echo $WINDOW_POSITION
   echo ${RESOLUTIONS[@]}
@@ -60,7 +119,7 @@ for monitor in "${!MONITOR[@]}"; do
   if [ "$WINDOW_SIZE" == "${RESOLUTIONS[${monitor}]}" -a "$WINDOW_POSITION" == "${OFFSETS[${monitor}]}" ]; then
     for monitor_off in "${!MONITOR[@]}"; do
       if [ "$monitor" != "$monitor_off" ]; then
-        $xrandr --output "${MONITOR[${monitor_off}]}" --brightness 0 
+        $xrandr --output "${MONITOR[${monitor_off}]}" --brightness "${BRIGHTNESS}"
       fi
     done
   fi
