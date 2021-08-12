@@ -17,20 +17,37 @@ awk="$($which awk)" || exit
 cut="$($which cut)" || exit
 getopt="$($which getopt)" || exit
 bc="$($which bc)" || exit
+tr="$($which tr)" || exit
 
 SELF="$( $basename "$0" )"
-PARSED=$( $getopt --quiet --options=b:dh --longoptions=brightness:,debug,help --name="$SELF" -- "$@" )
+PARSED=$( $getopt --quiet --options=b:m:dhl --longoptions=brightness:,monitor:debug,help,list-monitors --name="$SELF" -- "$@" )
 
 eval set -- "$PARSED"
 
+LIST_MONITORS=0
 DEBUG=0
 BRIGHTNESS=1
 HELP=0
+MONITOR=( $($xrandr | $grep "\ connected\ " | $cut -d " " -f 1) )
+MONITORS_OFF=""
 
 while true; do
   case "$1" in
+    -l|--list-monitors)
+      LIST_MONITORS=1
+      ;;
     -d|--debug)
       DEBUG=1
+      ;;
+    -m|--monitors)
+      MONITORS_OFF=( $(echo "${2}" | $tr "," " ") )
+      for m in ${MONITORS_OFF[@]}; do
+        if [[ ! " ${MONITOR[@]} " =~ " ${m} " ]]; then
+          echo "Specified monitor ${m} not found."
+          exit
+        fi
+      done
+      shift
       ;;
     -b|--brightness)
       if [ "$DEBUG" -eq 1 ]; then
@@ -71,12 +88,21 @@ if [ "${HELP}" -eq 1 ]; then
   echo " -d, --debug"
   echo "        Turn on debug messages."
   echo
+  echo " -l, --list-monitors"
+  echo "        Show currently connected monitors."
+  echo
+  echo " -m, --monitors"
+  echo "        Specify wich monitors to set the breghtenss level. Multiple monitors, must be separated by commas (\",\")."
+  echo
   echo " -h, --help"
   echo "        Show this help."
   exit
 fi
 
-MONITOR=( $($xrandr | $grep "\ connected\ " | $cut -d " " -f 1) )
+if [ ${LIST_MONITORS} -eq 1 ]; then
+  echo "${MONITOR[@]}"
+  exit
+fi
 
 if [ "$#" -eq 1 -a "$1" == "on" ]; then
   for monitor in ${MONITOR[@]} ; do
@@ -109,16 +135,31 @@ WINDOW_POSITION="$(echo $($xwininfo -id $($xdotool getactivewindow) -stats | \
                 $sed -e 's/\([[:digit:]]\+\) \([[:digit:]]\)\+/+\1+\2/')"
 
 if [ "$DEBUG" -eq 1 ]; then
+  echo "-----"
+  echo "${MONITOR[@]}"
   echo $WINDOW_SIZE
   echo $WINDOW_POSITION
   echo ${RESOLUTIONS[@]}
   echo ${OFFSETS[@]}
+  echo "-----"
+fi
+if [ -n "${MONITORS_OFF}" ]; then
+  for monitor_off in "${MONITORS_OFF[@]}"; do
+        if [ "$DEBUG" -eq 1 ]; then
+          echo "${monitor_off}" "${BRIGHTNESS}"
+        fi
+        $xrandr --output "${monitor_off}" --brightness "${BRIGHTNESS}"
+  done
+  exit
 fi
 
 for monitor in "${!MONITOR[@]}"; do
   if [ "$WINDOW_SIZE" == "${RESOLUTIONS[${monitor}]}" -a "$WINDOW_POSITION" == "${OFFSETS[${monitor}]}" ]; then
     for monitor_off in "${!MONITOR[@]}"; do
       if [ "$monitor" != "$monitor_off" ]; then
+        if [ "$DEBUG" -eq 1 ]; then
+          echo "${MONITOR[${monitor_off}]}" "${BRIGHTNESS}"
+        fi
         $xrandr --output "${MONITOR[${monitor_off}]}" --brightness "${BRIGHTNESS}"
       fi
     done
