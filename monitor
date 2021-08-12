@@ -18,9 +18,10 @@ cut="$($which cut)" || exit
 getopt="$($which getopt)" || exit
 bc="$($which bc)" || exit
 tr="$($which tr)" || exit
+printf="$($which printf)" || exit
 
 SELF="$( $basename "$0" )"
-PARSED=$( $getopt --quiet --options=b:m:dhl --longoptions=brightness:,monitor:debug,help,list-monitors --name="$SELF" -- "$@" )
+PARSED=$( $getopt --quiet --options=b:m:pdhl --longoptions=brightness:,monitor:,all-but-primary,debug,help,list-monitors --name="$SELF" -- "$@" )
 
 eval set -- "$PARSED"
 
@@ -33,8 +34,14 @@ MONITORS_OFF=""
 
 while true; do
   case "$1" in
+    -p|--all-but-primary)
+      primary="$($xrandr --current | $grep "connected primary" | $cut -d " " -f 1)"
+      others="$($printf '%s\n' "${MONITOR[@]//$primary/}")"
+      MONITORS_OFF=( $others )
+      ;;
     -l|--list-monitors)
-      LIST_MONITORS=1
+      echo "${MONITOR[@]}"
+      exit
       ;;
     -d|--debug)
       DEBUG=1
@@ -82,6 +89,9 @@ if [ "${HELP}" -eq 1 ]; then
   echo
   echo "Usage: ${SELF} [-b|--brightness brightness] [-h|--help] [-d|--debug]"
   echo
+  echo " -p, --all-but-primary"
+  echo "        Select all monitors except the one that is the primary."
+  echo
   echo " -b, --brightness"
   echo "        Set the brightness level for the monitors that should go dimmed. Accepted values are floating point from 0 to 1."
   echo
@@ -99,14 +109,19 @@ if [ "${HELP}" -eq 1 ]; then
   exit
 fi
 
-if [ ${LIST_MONITORS} -eq 1 ]; then
-  echo "${MONITOR[@]}"
-  exit
-fi
-
 if [ "$#" -eq 1 -a "$1" == "on" ]; then
   for monitor in ${MONITOR[@]} ; do
     $xrandr --output "${monitor}" --brightness 1
+  done
+  exit
+fi
+
+if [ -n "${MONITORS_OFF}" ]; then
+  for monitor_off in "${MONITORS_OFF[@]}"; do
+        if [ "$DEBUG" -eq 1 ]; then
+          echo "${monitor_off}" "${BRIGHTNESS}"
+        fi
+        $xrandr --output "${monitor_off}" --brightness "${BRIGHTNESS}"
   done
   exit
 fi
@@ -120,6 +135,7 @@ do
     exit
   fi
 done < <($xrandr --verbose | $awk '/Brightness/ { print $2; }')
+
 
 RESOLUTIONS=( $($xrandr | $sed -ne "s/.*\ connected\ \(primary \)\?\([[:digit:]]\+x[[:digit:]]\+\)+[[:digit:]]\++[[:digit:]]\+\ .*/\2/p") )
 OFFSETS=( $($xrandr | $sed -ne "s/.*\ connected\ \(primary \)\?[[:digit:]]\+x[[:digit:]]\+\(+[[:digit:]]\++[[:digit:]]\+\)\ .*/\2/p") )
@@ -142,15 +158,6 @@ if [ "$DEBUG" -eq 1 ]; then
   echo ${RESOLUTIONS[@]}
   echo ${OFFSETS[@]}
   echo "-----"
-fi
-if [ -n "${MONITORS_OFF}" ]; then
-  for monitor_off in "${MONITORS_OFF[@]}"; do
-        if [ "$DEBUG" -eq 1 ]; then
-          echo "${monitor_off}" "${BRIGHTNESS}"
-        fi
-        $xrandr --output "${monitor_off}" --brightness "${BRIGHTNESS}"
-  done
-  exit
 fi
 
 for monitor in "${!MONITOR[@]}"; do
