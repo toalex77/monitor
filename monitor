@@ -9,7 +9,6 @@ basename="$($which basename)" || exit
 xrandr="$($which xrandr)" || exit
 xdotool="$($which xdotool)" || exit
 xwininfo="$($which xwininfo)" || exit
-xdpyinfo="$($which xdpyinfo)" || exit
 grep="$($which grep)" || exit
 sed="$($which sed)" || exit
 egrep="$($which egrep)" || exit
@@ -25,7 +24,6 @@ PARSED=$( $getopt --quiet --options=b:m:pdhl --longoptions=brightness:,monitor:,
 
 eval set -- "$PARSED"
 
-LIST_MONITORS=0
 DEBUG=0
 BRIGHTNESS=1
 HELP=0
@@ -58,7 +56,7 @@ while true; do
       ;;
     -b|--brightness)
       if [ "$DEBUG" -eq 1 ]; then
-        echo "$2"
+        echo "Brightness: $2"
         echo "$2 >= 0.0" | $bc 2> /dev/null
         echo "$2 <= 1.0" | $bc 2> /dev/null
       fi
@@ -117,7 +115,7 @@ if [ "$#" -eq 1 -a "$1" == "on" ]; then
 fi
 
 if [ -n "${MONITORS_OFF}" ]; then
-  for monitor_off in "${MONITORS_OFF[@]}"; do
+  for monitor_off in ${MONITORS_OFF[@]}; do
         if [ "$DEBUG" -eq 1 ]; then
           echo "${monitor_off}" "${BRIGHTNESS}"
         fi
@@ -136,36 +134,40 @@ do
   fi
 done < <($xrandr --verbose | $awk '/Brightness/ { print $2; }')
 
+XRANDR="$($xrandr)"
+RESOLUTIONS=( $(echo -n "$XRANDR" | $sed -ne "s/.*\ connected\ \(primary \)\?\([[:digit:]]\+x[[:digit:]]\+\)+[[:digit:]]\++[[:digit:]]\+\ .*/\2/p") )
+OFFSETS=( $(echo -n "$XRANDR" | $sed -ne "s/.*\ connected\ \(primary \)\?[[:digit:]]\+x[[:digit:]]\+\(+[[:digit:]]\++[[:digit:]]\+\)\ .*/\2/p") )
 
-RESOLUTIONS=( $($xrandr | $sed -ne "s/.*\ connected\ \(primary \)\?\([[:digit:]]\+x[[:digit:]]\+\)+[[:digit:]]\++[[:digit:]]\+\ .*/\2/p") )
-OFFSETS=( $($xrandr | $sed -ne "s/.*\ connected\ \(primary \)\?[[:digit:]]\+x[[:digit:]]\+\(+[[:digit:]]\++[[:digit:]]\+\)\ .*/\2/p") )
+WINDOW_INFO="$($xwininfo -id $($xdotool getactivewindow) -stats)"
 
-WINDOW_SIZE="$(echo $($xwininfo -id $($xdotool getactivewindow) -stats | \
+WINDOW_SIZE="$(echo -n "${WINDOW_INFO}" | \
                 $egrep '(Width|Height):' | \
-                $awk '{print $NF}') | \
-                $sed -e 's/ /x/')"
+                $awk '{printf("%s", NR==1?$NF:"x"$NF);}')"
 
-WINDOW_POSITION="$(echo $($xwininfo -id $($xdotool getactivewindow) -stats | \
+WINDOW_POSITION="$(echo -n "${WINDOW_INFO}" | \
                 $egrep '(Absolute upper-left X|Absolute upper-left Y):' | \
-                $awk '{print $NF}') | \
-                $sed -e 's/\([[:digit:]]\+\) \([[:digit:]]\)\+/+\1+\2/')"
+                $awk '{printf("+%s", $NF);}')"
 
 if [ "$DEBUG" -eq 1 ]; then
   echo "-----"
-  echo "${MONITOR[@]}"
-  echo $WINDOW_SIZE
-  echo $WINDOW_POSITION
-  echo ${RESOLUTIONS[@]}
-  echo ${OFFSETS[@]}
+  echo "-${MONITOR[@]}-"
+  echo "-${WINDOW_SIZE}-"
+  echo "-${WINDOW_POSITION}-"
+  echo "-${RESOLUTIONS[@]}-"
+  echo "-${OFFSETS[@]}-"
+  echo "-${!MONITOR[@]}-"
   echo "-----"
 fi
 
-for monitor in "${!MONITOR[@]}"; do
-  if [ "$WINDOW_SIZE" == "${RESOLUTIONS[${monitor}]}" -a "$WINDOW_POSITION" == "${OFFSETS[${monitor}]}" ]; then
-    for monitor_off in "${!MONITOR[@]}"; do
+for monitor in ${!MONITOR[@]}; do
+  if [ "$DEBUG" -eq 1 ]; then
+    echo "-${WINDOW_SIZE}- -${RESOLUTIONS[${monitor}]}- -${WINDOW_POSITION}- -${OFFSETS[${monitor}]}-"
+  fi
+  if [ "${WINDOW_SIZE}" == "${RESOLUTIONS[${monitor}]}" -a "${WINDOW_POSITION}" == "${OFFSETS[${monitor}]}" ]; then
+    for monitor_off in ${!MONITOR[@]}; do
       if [ "$monitor" != "$monitor_off" ]; then
         if [ "$DEBUG" -eq 1 ]; then
-          echo "${MONITOR[${monitor_off}]}" "${BRIGHTNESS}"
+          echo "Off: ${MONITOR[${monitor_off}]}" "${BRIGHTNESS}"
         fi
         $xrandr --output "${MONITOR[${monitor_off}]}" --brightness "${BRIGHTNESS}"
       fi
